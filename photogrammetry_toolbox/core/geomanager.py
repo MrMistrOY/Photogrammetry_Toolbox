@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 import xml.etree.ElementTree as ET
 
+from tqdm import tqdm
+
 from photogrammetry_toolbox.tools.read_midf import ParserMidf
 
 
@@ -13,6 +15,7 @@ class GeoManager:
         self.sensor_dims = {'x': 0, 'y': 0}
         self.external_orient = None
         self.list_object = None
+        self.list_vector = {}
 
     @property
     def get_images(self):
@@ -47,10 +50,12 @@ class GeoManager:
         y = float(root.findall('x')[2].findall('x')[1].findall('i')[1].get('v'))
         self.sensor_dims = {'x': x, 'y': y}
 
-    def add_vector(self, filename, format='midf'):
+    def add_vector(self, name, filename, transform_pixel=False, format='midf'):
         """
         Добавление информационного вектора
+        :param name: Имя вектора
         :param filename: Путь до файла с объектами
+        :param transform_pixel: Преобразование в локальные координаты
         :param format: Формат данных в файле
                 midf - формат для чтения из файлов mid|mif
         :return:
@@ -60,7 +65,28 @@ class GeoManager:
         else:
             vector = None
 
-        return vector
+        if vector is not None:
+            self.list_vector[name] = vector
+
+        if transform_pixel:
+            self.transform_vector(name)
+
+    def transform_vector(self, name):
+        vector = np.array([obj['geom'] for obj in self.list_vector[name]]).T
+
+        for filename in tqdm(self.get_images):
+            pixel_points = self.geo2pixel(vector, filename)
+            idx_x = np.bitwise_and(pixel_points[0] > 0, pixel_points[0] < self.sensor_dims['x'])
+            idx_y = np.bitwise_and(pixel_points[1] > 0, pixel_points[1] < self.sensor_dims['y'])
+            idx = np.argwhere(np.bitwise_and(idx_x, idx_y))
+            if len(idx) != 0:
+                for i in idx.reshape(-1):
+                    if 'transform' in self.list_vector[name][i]:
+                        self.list_vector[name][i]['transform'] += [{'pixel': [pixel_points[0][i], pixel_points[1][i]],
+                                                                    'image_id': filename}]
+                    else:
+                        self.list_vector[name][i]['transform'] = [{'pixel': [pixel_points[0][i], pixel_points[1][i]],
+                                                                   'image_id': filename}]
 
     def get_external_orient(self, filename):
         assert self.external_orient is not None, 'Не заданы параметры внешнего ориентирования снимков, ' \
