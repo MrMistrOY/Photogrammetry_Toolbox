@@ -12,8 +12,9 @@ class ParserMidf:
         self.lines_mif = file_mif.split('\n')
         self.lines_mid = file_mid.split('\n')
         self.idx_connection = 0
-        self.lines_mif = list(filter(lambda x: x != '',  self.lines_mif))
-        self.lines_mid = list(filter(lambda x: x != '',  self.lines_mid))
+        self.id_obj = 0
+        self.lines_mif = list(filter(lambda x: x != '', self.lines_mif))
+        self.lines_mid = list(filter(lambda x: x != '', self.lines_mid))
         self.lines_mid = self.convert_mid()
 
     def convert_mid(self):
@@ -111,10 +112,11 @@ class ParserMidf:
 
     def calc_stat(self, geom):
         types = (
-        "point", "line", "pline", "region", "arc", "text", "rect", "roundrect", "ellipse", "multipoint", "collection")
+            "point", "line", "pline", "region", "arc", "text", "rect", "roundrect", "ellipse", "multipoint",
+            "collection")
         stat = {type: 0 for type in types}
         for obj in geom:
-            stat[obj['type']] += 1
+            stat[obj['type_obj']] += 1
         for key, val in stat.items():
             if val != 0:
                 print(f'Загружено {val} объектов типа {key}')
@@ -134,7 +136,8 @@ class ParserMidf:
 
         geom_objects = []
         types = (
-        "point", "line", "pline", "region", "arc", "text", "rect", "roundrect", "ellipse", "multipoint", "collection")
+            "point", "line", "pline", "region", "arc", "text", "rect", "roundrect", "ellipse", "multipoint",
+            "collection")
 
         for line_num in range(l, m):
             line = self.lines_mif[line_num]
@@ -161,7 +164,7 @@ class ParserMidf:
                 func = parsers[line[0]](l)
             except:
                 raise ValueError(f'Не известный формат {line[0]} в строке {l})')
-            geom.append(func)
+            geom += func
         self.calc_stat(geom)
         return geom
 
@@ -175,7 +178,9 @@ class ParserMidf:
         if 'Z' in self.lines_mid[0]:
             point.append(self.lines_mid[self.idx_connection]['Z'])
             self.idx_connection += 1
-        return {"type": "point", "geom": point}
+        id_obj = self.id_obj
+        self.id_obj += 1
+        return [{"type_obj": "point", "geom": point, 'id_obj': id_obj}]
 
     def __parseLine(self, line):
         """
@@ -192,7 +197,9 @@ class ParserMidf:
             point2.append(z)
             self.idx_connection += 1
         point = [point1, point2]
-        return {"type": "line", "geom": point}
+        # TODO переделать в новый формат
+        assert False, 'Переделать в новый формат'
+        return {"type_obj": "line", "geom": point}
 
     def __parsePline(self, line):
         """
@@ -212,7 +219,9 @@ class ParserMidf:
                 point.append(self.lines_mid[self.idx_connection]['Z'])
                 self.idx_connection += 1
             geometry[0].append(point)
-        return {"type": "pline", "geom": geometry}
+        # TODO переделать в новый формат
+        assert False, 'Переделать в новый формат'
+        return {"type_obj": "pline", "geom": geometry}
 
     def __parseRegion(self, line):
         """
@@ -224,6 +233,7 @@ class ParserMidf:
         reg_count = int(line_str[1])
         reg_len = None
         geometry = []
+        id_obj = self.id_obj
         for _ in range(reg_count):
             for l in range(line, len(self.lines_mif)):
                 try:
@@ -240,10 +250,11 @@ class ParserMidf:
                 point = [float(x) for x in self.lines_mif[l].replace('\t', '').split(' ')]
                 if 'Z' in self.lines_mid[0]:
                     point.append(self.lines_mid[self.idx_connection]['Z'])
-                geometry.append(point)
+                geometry.append({"type_obj": "region", "geom": point, 'id_obj': id_obj})
             if 'Z' in self.lines_mid[0]:
                 self.idx_connection += 1
-        return {"type": "region", "geom": geometry, "reg_count": reg_count}
+            self.id_obj += 1
+        return geometry
 
     # TODO Доделать остальные форматы данных
     def __parseArc(self, line):
@@ -279,7 +290,10 @@ class ParserMidf:
         for i in range(line, line + point_count):
             point = self.lines_mif[i].replace('\t', '').split(' ')
             geometry.append(point)
-        return {"type": "multipoint", "geom": geometry}
+
+        # TODO переделать в новый формат
+        assert False, 'Переделать в новый формат'
+        return {"type_obj": "multipoint", "geom": geometry}
 
     def __parseCollection(self, line):
         """
@@ -292,7 +306,8 @@ class ParserMidf:
         collection_len = int(line_str[1])
         line += 1
         types = (
-        "point", "line", "pline", "region", "arc", "text", "rect", "roundrect", "ellipse", "multipoint", "collection")
+            "point", "line", "pline", "region", "arc", "text", "rect", "roundrect", "ellipse", "multipoint",
+            "collection")
         for l in range(line, len(self.lines_mif)):
             line_str = self.lines_mif[l].lower().replace('\t', '')
             if line_str.startswith(types):
@@ -320,4 +335,30 @@ class ParserMidf:
             except:
                 raise ValueError(f'Не известный формат {line[0]} в строке {l})')
             geom_return.append(func(obj))
+
+        # TODO переделать в новый формат
+        assert False, 'Переделать в новый формат'
         return {"type": "collection", "geom": geom_return}
+
+
+def writer(filename, vector):
+    file_mif = open(f'{filename}.mif', 'w')
+    file_mid = open(f'{filename}.mid', 'w')
+
+    start_line = '''Version 2\nCharset "WindowsCyrillic"\nCoordSys Nonearth Units "m" \nColumns 9\n Z Float\nData\n\n'''
+    file_mif.write(start_line)
+    skip_line = '    Symbol (32, 0, 2)\n'
+    for object in tqdm(vector, desc='Преобразование в формат mid/mif'):
+        if object['type_obj'] == 'point':
+            type_obj = 'Point'
+        else:
+            type_obj = None
+        if type_obj is None:
+            continue
+        file_mif.write(f"{type_obj} {object['geom'][0]} {object['geom'][1]}\n")
+        file_mif.write(skip_line)
+        file_mid.write(f"{object['geom'][2]}\n")
+
+    file_mif.close()
+    file_mid.close()
+
